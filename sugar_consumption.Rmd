@@ -2,16 +2,23 @@
 title: "sugar_consumption.Rmd"
 output: pdf_document
 date: "2024-05-16"
+author: "AJR"
 ---
 
 
+Load some R packages:  
+  
 ```{r}
-library(sf)
+suppressPackageStartupMessages(library(sf))
 library(sp)
 library(ggplot2)
 library(maps)
+suppressPackageStartupMessages(library(dplyr))
+```
 
-
+Get some map data and create an sf dataframe:  
+  
+```{r}
 world_map <- map_data("world")
 class(world_map)
 
@@ -26,7 +33,15 @@ xy_polygon <- st_cast(xy_multipoint, to = "POLYGON")
 polygon_sf <- st_sf(data.frame(geometry = xy_polygon, group = unique(ids)))
 
 plot(polygon_sf)
+```
+\pagebreak  
+  
+  
+Combine the sugar data with the map data:  
+  
 
+
+```{r}
 world_map_summary <- summarize(group_by(world_map, group, region, subregion), .groups = "keep")
 
 
