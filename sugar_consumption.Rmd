@@ -1,0 +1,13 @@
+---
+title: "sugar_consumption.Rmd"
+output: pdf_document
+date: "2024-05-16"
+---
+
+
+```{r}
+library(sf)
+library(sp)
+library(ggplot2)
+
+```
