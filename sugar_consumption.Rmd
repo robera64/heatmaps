@@ -1,10 +1,16 @@
 ---
-title: "sugar_consumption.Rmd"
+title: "Heat Map Examples"
+subtitle: "sugar_consumption.Rmd"
 output: pdf_document
 date: "2024-05-16"
 author: "AJR"
+fontsize: 12pt
+header-includes: \usepackage{float}
 ---
 
+```{r, echo = FALSE}
+knitr::opts_chunk$set(fig.pos = 'H')
+```
 
 Load some R packages:  
   
@@ -16,12 +22,15 @@ library(maps)
 suppressPackageStartupMessages(library(dplyr))
 ```
 
-Get some map data and create an sf dataframe:  
+Get some map data:   
   
 ```{r}
 world_map <- map_data("world")
 class(world_map)
+```
 
+Create an sf dataframe: 
+```{r}
 xy_points <- SpatialPoints(cbind(world_map$long, world_map$lat))
 xy_points <- st_as_sfc(xy_points)
 
@@ -32,7 +41,8 @@ xy_polygon <- st_cast(xy_multipoint, to = "POLYGON")
 
 polygon_sf <- st_sf(data.frame(geometry = xy_polygon, group = unique(ids)))
 
-plot(polygon_sf)
+# Not run:
+# plot(polygon_sf)
 ```
 \pagebreak  
   
@@ -41,9 +51,9 @@ Combine the sugar data with the map data:
   
 
 
-```{r}
-world_map_summary <- summarize(group_by(world_map, group, region, subregion), .groups = "keep")
-
+```{r, fig.cap = "Many of the missing values are due to mismatches in region names.", out.extra = ""}
+world_map_summary <- summarize(group_by(world_map, group, region, subregion), 
+                               .groups = "keep")
 
 polygon_sf <- left_join(polygon_sf, world_map_summary, by = "group")
 
@@ -54,11 +64,115 @@ sugar_data <- read.csv("WHO_sugar_data.csv")
 sugar_data$region <- sugar_data$Location
 
 
-polygon_sf <- left_join(polygon_sf, sugar_data[,c("region", "Value")], by = "region")
-
-names(polygon_sf)
-
+polygon_sf <- left_join(polygon_sf, sugar_data[,c("region", "Value")], 
+                        by = "region")
 
 ggplot(polygon_sf) +
-  geom_sf(aes(fill = Value))
+  geom_sf(aes(fill = Value)) 
+```
+\pagebreak  
+  
+  
+Several of the `region` names in the map data do not match the `Location` names in the sugar data. Will will fix some of these mismatches manually.  
+  
+  
+  
+```{r}  
+sugar_data[sugar_data$Location == "United States of America",]$region <- 
+  "USA"
+
+sugar_data[sugar_data$Location == "United Kingdom of Great Britain and Northern Ireland",]$region <- 
+  "UK"
+
+sugar_data[sugar_data$Location == "Russian Federation",]$region <- "Russia"
+sugar_data[sugar_data$Location =="Bolivia (Plurinational State of)",]$region <- 
+  "Bolivia"
+
+sugar_data[sugar_data$Location =="Venezuela (Bolivarian Republic of)",]$region <-
+  "Venezuela"
+```
+
+Remove previous `Value` column to avoid a duplicated column:  
+
+```{r}
+polygon_sf <- polygon_sf[,names(polygon_sf) != "Value"]
+```
+
+Re-join the sugar data:  
+ 
+```{r}
+polygon_sf <- left_join(polygon_sf, sugar_data[,c("region", "Value")], 
+                        by = "region")
+
+ggplot(polygon_sf) +
+  geom_sf(aes(fill = Value)) 
+```
+
+The `left_join()` function will not automatically replace the values in the `Value` column; thus that column has been dropped before re-joining the sugar data values.  
+  
+  
+ 
+
+
+
+\pagebreak  
+  
+  
+The colour scale may let us seem some general patterns; however, the colour scale does not make it easy to read off a data value for any particular country.  
+  
+  
+```{r}
+label_sf <- reframe(group_by(polygon_sf[polygon_sf$region != "Antarctica",], region), Value = unique(Value), 
+                    geometry = st_union(geometry))
+
+label_sf$centroid <- st_centroid(label_sf$geometry, of_largest_polygon = TRUE)
+label_sf$point_on_surface <- st_point_on_surface(label_sf$geometry)
+
+ggplot(polygon_sf) +
+  geom_sf(aes(fill = Value)) +
+  geom_sf_text(aes(label = Value, geometry = centroid), data = label_sf,
+               size = 2, na.rm = TRUE) +
+  theme(legend.position = "bottom")
+```
+\pagebreak  
+  
+  
+
+```{r, fig.height = 6.5, fig.cap = "Labelling maps is not necessarily an easy problem.", out.extra = ""}
+ggplot(polygon_sf) +
+  geom_sf(aes(fill = Value)) +
+  geom_sf_text(aes(label = paste(region, Value), geometry = centroid), 
+               data = label_sf, size = 2, na.rm = TRUE) +
+  xlim(-25, 35) + ylim(-35, 75) +
+  theme(legend.position = "bottom")
+```
+\pagebreak  
+  
+  
+
+Has the data here been triplicated? (Each region appearing three times?)
+
+Downloaded: 16 May 2024.
+
+https://www.who.int/data/gho/data/indicators/indicator-details/GHO/existence-of-tax-on-sugar-sweetened-beverages
+
+```{r, eval = FALSE}
+sugar_policy <- read.csv("who_sugar_policy_16May2024.csv")
+names(sugar_policy)
+
+sugar_policy$tax <- sugar_policy$Value
+sugar_policy$region <- sugar_policy$Location
+
+
+
+
+
+
+
+polygon_sf <- left_join(polygon_sf, sugar_policy[,c("Period", 
+"region", "tax")], by = "region")
+
+ggplot(polygon_sf) +
+  geom_sf(aes(fill= tax)) +
+  facet_wrap(~Period)
 ```
