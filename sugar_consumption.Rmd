@@ -9,5 +9,41 @@ date: "2024-05-16"
 library(sf)
 library(sp)
 library(ggplot2)
+library(maps)
 
+
+world_map <- map_data("world")
+class(world_map)
+
+xy_points <- SpatialPoints(cbind(world_map$long, world_map$lat))
+xy_points <- st_as_sfc(xy_points)
+
+ids <- world_map$group
+
+xy_multipoint <- st_cast(xy_points, to = "MULTIPOINT", ids = ids)
+xy_polygon <- st_cast(xy_multipoint, to = "POLYGON")
+
+polygon_sf <- st_sf(data.frame(geometry = xy_polygon, group = unique(ids)))
+
+plot(polygon_sf)
+
+world_map_summary <- summarize(group_by(world_map, group, region, subregion), .groups = "keep")
+
+
+polygon_sf <- left_join(polygon_sf, world_map_summary, by = "group")
+
+
+sugar_data <- read.csv("WHO_sugar_data.csv")
+
+
+sugar_data$region <- sugar_data$Location
+
+
+polygon_sf <- left_join(polygon_sf, sugar_data[,c("region", "Value")], by = "region")
+
+names(polygon_sf)
+
+
+ggplot(polygon_sf) +
+  geom_sf(aes(fill = Value))
 ```
