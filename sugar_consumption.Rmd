@@ -12,6 +12,28 @@ header-includes: \usepackage{float}
 knitr::opts_chunk$set(fig.pos = 'H')
 ```
 
+# Introduction  
+  
+This material may be of use for this short course:  
+  
+  
+Session Date / Time:	8/4/2024, 1:00 pm - 4:00 pm (California Time)  
+Title:	Heatmaps, Colour Spaces, and Bubble Plots With R  
+
+\bigskip  
+  
+  
+
+The term *heatmap* may mean different things to different people. Some people may strongly associate the term with bioinformatics. Generally speaking, we are interested in cases where we have an x- variable and an y- variable plotted to the horizontal and vertical axes, and a third variable that is plotted  to colour. We can also include cases where spatial polygons are plotted to colour of fill; such plots seems to be popular (and some people may strongly associate the term *map* with a geographic map).  
+  
+We might call a scatterplot that maps a third variable to colour a *confetti plot*; the term *confetti plot* does not yet seem to be in general use.  
+
+  
+  
+\pagebreak  
+  
+  
+  
 Load some R packages:  
   
 ```{r}
@@ -22,6 +44,13 @@ library(maps)
 suppressPackageStartupMessages(library(dplyr))
 ```
 
+\pagebreak  
+  
+  
+# Draw a Map of the World  
+ 
+ 
+
 Get some map data:   
   
 ```{r}
@@ -31,6 +60,12 @@ class(world_map)
 
 Create an sf dataframe: 
 ```{r}
+# Perhaps a better method:
+# XY <- st_sfc(st_multipoint(cbind(world_map$long, world_map$lat)))
+# XY <- st_cast(XY, "POINT")
+# world_map2 <- world_map
+# world_map2$geometry <- XY etc.
+
 xy_points <- SpatialPoints(cbind(world_map$long, world_map$lat))
 xy_points <- st_as_sfc(xy_points)
 
@@ -42,9 +77,18 @@ xy_polygon <- st_cast(xy_multipoint, to = "POLYGON")
 polygon_sf <- st_sf(data.frame(geometry = xy_polygon, group = unique(ids)))
 
 # Not run:
-# plot(polygon_sf)
+plot(polygon_sf)
 ```
+
+It seems that there ought to be an easier way to transform the `maps` package data frame into an sf data frame.  
+  
+
+
 \pagebreak  
+  
+  
+  
+# Combine Sugar Availability Data with Map Data  
   
   
 Combine the sugar data with the map data:  
@@ -52,6 +96,7 @@ Combine the sugar data with the map data:
 
 
 ```{r, fig.cap = "Many of the missing values are due to mismatches in region names.", out.extra = ""}
+
 world_map_summary <- summarize(group_by(world_map, group, region, subregion), 
                                .groups = "keep")
 
@@ -103,27 +148,33 @@ Re-join the sugar data:
 ```{r}
 polygon_sf <- left_join(polygon_sf, sugar_data[,c("region", "Value")], 
                         by = "region")
+```
 
+Re-draw the map:  
+
+```{r, fig.cap = "Now fewer countries have data missing."}
 ggplot(polygon_sf) +
   geom_sf(aes(fill = Value)) 
 ```
 
 The `left_join()` function will not automatically replace the values in the `Value` column; thus that column has been dropped before re-joining the sugar data values.  
   
-  
- 
-
-
 
 \pagebreak  
   
   
+# Add Text Labels to the Map  
+  
+  
+  
 The colour scale may let us seem some general patterns; however, the colour scale does not make it easy to read off a data value for any particular country.  
   
+To add text labels to the map, we will want labelling points:  
   
 ```{r}
-label_sf <- reframe(group_by(polygon_sf[polygon_sf$region != "Antarctica",], region), Value = unique(Value), 
-                    geometry = st_union(geometry))
+label_sf <- 
+  reframe(group_by(polygon_sf[polygon_sf$region != "Antarctica",], region), 
+          Value = unique(Value), geometry = st_union(geometry))
 
 label_sf$centroid <- st_centroid(label_sf$geometry, of_largest_polygon = TRUE)
 label_sf$point_on_surface <- st_point_on_surface(label_sf$geometry)
@@ -138,41 +189,15 @@ ggplot(polygon_sf) +
   
   
 
-```{r, fig.height = 6.5, fig.cap = "Labelling maps is not necessarily an easy problem.", out.extra = ""}
+```{r, fig.height = 8, fig.cap = "", out.extra = ""}
+
+pal <- colorspace::diverge_hcl(n = 20)
+
 ggplot(polygon_sf) +
   geom_sf(aes(fill = Value)) +
   geom_sf_text(aes(label = paste(region, Value), geometry = centroid), 
-               data = label_sf, size = 2, na.rm = TRUE) +
-  xlim(-25, 35) + ylim(-35, 75) +
-  theme(legend.position = "bottom")
-```
-\pagebreak  
-  
-  
-
-Has the data here been triplicated? (Each region appearing three times?)
-
-Downloaded: 16 May 2024.
-
-https://www.who.int/data/gho/data/indicators/indicator-details/GHO/existence-of-tax-on-sugar-sweetened-beverages
-
-```{r, eval = FALSE}
-sugar_policy <- read.csv("who_sugar_policy_16May2024.csv")
-names(sugar_policy)
-
-sugar_policy$tax <- sugar_policy$Value
-sugar_policy$region <- sugar_policy$Location
-
-
-
-
-
-
-
-polygon_sf <- left_join(polygon_sf, sugar_policy[,c("Period", 
-"region", "tax")], by = "region")
-
-ggplot(polygon_sf) +
-  geom_sf(aes(fill= tax)) +
-  facet_wrap(~Period)
+               data = label_sf[!is.na(label_sf$Value), ], size = 2, na.rm = TRUE) +
+  xlim(-25, 45) + ylim(-35, 75) +
+  theme(legend.position = "bottom") +
+  scale_fill_gradientn(colours = pal)
 ```
