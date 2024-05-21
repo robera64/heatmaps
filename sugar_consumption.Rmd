@@ -1,6 +1,6 @@
 ---
-title: "Heat Map Examples"
-subtitle: "sugar_consumption.Rmd"
+title: "Heatmaps, Colour Spaces, and Bubble Plots With R"
+subtitle: "Examples with WHO Sugar Availability Dataset"
 output: pdf_document
 date: "2024-05-16"
 author: "AJR"
@@ -127,9 +127,10 @@ It seems that there ought to be an easier way to transform the `maps` package da
 \pagebreak  
   
   
+# Heatmaps  
   
 
-# Combine Data with the Map  
+## Combine Data with the Map  
   
   
 Combine the sugar data with the map data:  
@@ -202,7 +203,7 @@ sugar_data[sugar_data$Location =="Iran (Islamic Republic of)" ,]$region <- "Iran
 sugar_data[sugar_data$Location =="Lao People's Democratic Republic",]$region <- "Laos"
 
 sugar_data[sugar_data$Location =="Syrian Arab Republic",]$region <- "Syria"
-
+sugar_data[sugar_data$Location =="Czechia",]$region <- "Czech Republic"
 ```
 
 Remove previous `Value` column to avoid a duplicated column:  
@@ -217,6 +218,22 @@ Re-join the sugar data:
 polygon_sf <- left_join(polygon_sf, sugar_data[,c("region", "Value")], 
                         by = "region")
 ```
+
+\pagebreak  
+  
+  
+  
+```{r, echo = FALSE, eval = FALSE}
+index <- unique(polygon_sf$region) %in% unique(sugar_data$Location)
+unique(polygon_sf$region)[!index]
+
+index2 <- unique(sugar_data$Location) %in% unique(polygon_sf$region) 
+unique(sugar_data$Location)[!index2]
+```
+\pagebreak  
+  
+  
+  
 
 Re-draw the map:  
 
@@ -234,7 +251,7 @@ The `left_join()` function will not automatically replace the values in the `Val
   
   
 
-# Colour Scales  
+## Colour Scales  
   
   
 ```{r, fig.cap = "Now fewer countries have data missing.", out.extra = ""}
@@ -280,7 +297,7 @@ grid.arrange(pA, pB, pC, pD, ncol = 2)
   
   
   
-# Add Text Labels to the Map  
+## Add Text Labels to the Map  
   
   
   
@@ -390,3 +407,104 @@ ggplot(polygon_sf) + theme_minimal() +
 ```
 
 
+# A Bubbleplot  
+  
+  
+The placement of text labels with `ggrepel` is difficult enough that we might be able to do better by custom programming a label placement algorithm. Here is the result of an attempt at such an algorithm.  
+  
+
+
+```{r, echo = FALSE, fig.height = 8.5}
+label_sf <- cbind(label_sf, st_coordinates(label_sf$centroid))
+# names(label_sf)
+
+label_sf_subset <- label_sf[(label_sf$X > -25 ) & (label_sf$X < 55) & (label_sf$Y > -35) & (label_sf$Y < 70), ]
+
+x_values <- seq(min(label_sf_subset$X), max(label_sf_subset$X), length.out = ceiling(sqrt(nrow(label_sf_subset)))) 
+y_values <- seq(min(label_sf_subset$Y) - 10, max(label_sf_subset$Y) + 25, length.out = ceiling(sqrt(nrow(label_sf_subset))))
+
+xy_grid <- expand.grid(X = x_values, Y = rev(y_values))
+
+nrow <- length(y_values)
+ncol <- length(x_values)
+
+regions <- character(nrow(label_sf_subset))
+
+
+label_sf_subsetB <- label_sf_subset
+x_start <- numeric(nrow(label_sf_subset))
+y_start <- numeric(nrow(label_sf_subset))
+
+for (i in 1:nrow(label_sf_subset)){
+  a <- ((i-1) %/% nrow) + 1
+  b <- ((i-1) %% ncol) + 1
+  
+  x0 <- xy_grid[i,]$X
+  y0 <- xy_grid[i,]$Y
+  
+  distances <- sqrt((label_sf_subsetB$X - x0)^2 + (label_sf_subsetB$Y - y0)^2)
+  
+  index <- which(distances == min(distances))
+  
+  regions[i] <- label_sf_subsetB$region[index]
+  
+  x_start[i] <- label_sf_subsetB$X[index]
+  y_start[i] <- label_sf_subsetB$Y[index]
+  
+label_sf_subsetB <- label_sf_subsetB[-index, ]
+}
+
+
+xy_grid <- xy_grid[1:nrow(label_sf_subset),]
+xy_grid$region <- regions
+xy_grid$x_start <- x_start
+xy_grid$y_start <- y_start
+
+
+xy_grid <- left_join(xy_grid, sugar_data[,c("region", "Value")], by = "region")
+
+pal <- colorspace::diverge_hcl(20)
+
+xy_grid$region_label <- paste(xy_grid$region, xy_grid$Value)
+xy_grid$region_label <- str_replace_all(xy_grid$region_label, " ", "\n")
+
+xmin <- min(xy_grid$X) - 5
+xmax <- max(xy_grid$X) + 5
+ymin <- min(xy_grid$Y) - 5
+ymax <- max(xy_grid$Y) + 5
+
+ggplot(xy_grid[!is.na(xy_grid$Value), ]) + theme_void() +
+  geom_sf(aes(geometry = geometry), data = polygon_sf, fill = "transparent", colour = grey(0.5), linewidth = 0.5) +
+  geom_segment(aes(X,Y, xend = x_start, yend = y_start), colour = "black") +
+  geom_point(aes(X, Y, size = Value,fill = Value), shape = 21, colour = "black", stroke = 0.2) +
+  geom_text(aes(X, Y, label = region_label), size = 2, lineheight = 1) +
+  scale_colour_gradientn(colours = pal, aesthetics = c("fill", "colour")) +
+  guides(colour = guide_legend(reverse = TRUE), fill =  guide_legend(reverse = TRUE), size = guide_legend(reverse = TRUE)) +
+  coord_sf(xlim = c(xmin, xmax), ylim = c(ymin, ymax)) +
+  scale_size(range = c(1, 14))
+
+
+p <- ggplot(xy_grid[!is.na(xy_grid$Value), ]) + theme_void() +
+  geom_sf(aes(geometry = geometry, fill = Value), data = polygon_sf) +
+  geom_segment(aes(X,Y, xend = x_start, yend = y_start), colour = grey(0.5), alpha = 0.5) +
+  geom_point(aes(X, Y, size = Value), shape = 21, colour = "black", stroke = 0.2) +
+  geom_text(aes(X, Y, label = region_label), size = 2, lineheight = 1) +
+  scale_colour_gradientn(colours = pal, aesthetics = c("fill", "colour")) +
+  guides(colour = guide_legend(reverse = TRUE), fill =  guide_legend(reverse = TRUE), size = guide_legend(reverse = TRUE)) +
+  coord_sf(xlim = c(xmin, xmax), ylim = c(ymin, ymax)) +
+  scale_size(range = c(1, 14))
+```
+
+\pagebreak  
+  
+
+# The Hue-Chroma-Luminance Colour Space  
+  
+```{r}
+
+
+
+
+```
+  
+  
