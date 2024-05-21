@@ -5,12 +5,18 @@ output: pdf_document
 date: "2024-05-16"
 author: "AJR"
 fontsize: 12pt
+toc: yes
 header-includes: \usepackage{float}
 ---
 
 ```{r, echo = FALSE}
 knitr::opts_chunk$set(fig.pos = 'H')
 ```
+
+\pagebreak  
+  
+  
+  
 
 # Introduction  
   
@@ -42,6 +48,9 @@ library(sp)
 library(ggplot2)
 library(maps)
 suppressPackageStartupMessages(library(dplyr))
+library(ggrepel)
+suppressPackageStartupMessages(library(gridExtra))
+library(stringr)
 ```
 
 \pagebreak  
@@ -59,13 +68,41 @@ class(world_map)
 ```
 
 Create an sf dataframe: 
-```{r}
-# Perhaps a better method:
-# XY <- st_sfc(st_multipoint(cbind(world_map$long, world_map$lat)))
-# XY <- st_cast(XY, "POINT")
-# world_map2 <- world_map
-# world_map2$geometry <- XY etc.
+```{r, echo = TRUE, eval = FALSE}
+# A better way of converting to an sf data frame ought to be possible.
 
+# Perhaps a better method:
+XY <- st_sfc(st_multipoint(cbind(world_map$long, world_map$lat)))
+XY <- st_cast(XY, "POINT")
+
+# XY <- st_cast(XY, ids = world_map$group, group_or_split = TRUE)
+
+# XY <- st_cast(XY, "MULTIPOINT")
+
+#XY <- st_cast(XY, "POINT")
+#XY <- st_cast(XY, "MULTIPOINT", ids = world_map$group, group_or_split = TRUE)
+
+# XY <- st_cast(XY, "POLYGON")
+
+# world_map2 <- world_map
+
+world_map2$geometry <- XY 
+
+
+world_map2 <- reframe(group_by(world_map2, group, region, subregion), 
+                        geometry = st_cast(geometry, to = "MULTIPOINT"))
+# class(world_map2$geometry)
+
+world_map2 <- st_sf(world_map2)
+
+world_map2$geometry <- st_sf(st_cast(world_map2, "MULTILINESTRING"))
+
+
+ggplot(world_map2) +
+  geom_sf()
+```
+
+```{r}
 xy_points <- SpatialPoints(cbind(world_map$long, world_map$lat))
 xy_points <- st_as_sfc(xy_points)
 
@@ -77,7 +114,10 @@ xy_polygon <- st_cast(xy_multipoint, to = "POLYGON")
 polygon_sf <- st_sf(data.frame(geometry = xy_polygon, group = unique(ids)))
 
 # Not run:
-plot(polygon_sf)
+# plot(polygon_sf)
+
+ggplot(polygon_sf) +
+  geom_sf()
 ```
 
 It seems that there ought to be an easier way to transform the `maps` package data frame into an sf data frame.  
@@ -88,7 +128,8 @@ It seems that there ought to be an easier way to transform the `maps` package da
   
   
   
-# Combine Sugar Availability Data with Map Data  
+
+# Combine Data with the Map  
   
   
 Combine the sugar data with the map data:  
@@ -117,6 +158,12 @@ ggplot(polygon_sf) +
 ```
 \pagebreak  
   
+
+
+
+## Standardizing Country Labels  
+  
+  
   
 Several of the `region` names in the map data do not match the `Location` names in the sugar data. Will will fix some of these mismatches manually.  
   
@@ -126,15 +173,36 @@ Several of the `region` names in the map data do not match the `Location` names 
 sugar_data[sugar_data$Location == "United States of America",]$region <- 
   "USA"
 
-sugar_data[sugar_data$Location == "United Kingdom of Great Britain and Northern Ireland",]$region <- 
-  "UK"
+sugar_data[sugar_data$Location == 
+    "United Kingdom of Great Britain and Northern Ireland",]$region <- "UK"
 
 sugar_data[sugar_data$Location == "Russian Federation",]$region <- "Russia"
+
 sugar_data[sugar_data$Location =="Bolivia (Plurinational State of)",]$region <- 
   "Bolivia"
 
-sugar_data[sugar_data$Location =="Venezuela (Bolivarian Republic of)",]$region <-
+sugar_data[sugar_data$Location ==
+             "Venezuela (Bolivarian Republic of)",]$region <-
   "Venezuela"
+
+
+sugar_data[sugar_data$Location =="Türkiye",]$region <- "Turkey" 
+
+sugar_data[sugar_data$Location =="Czechia",]$region <-  "Czech Republic" 
+
+sugar_data[sugar_data$Location =="Viet Nam" ,]$region <-  "Vietnam" 
+
+sugar_data[sugar_data$Location ==
+             "Democratic People's Republic of Korea" ,]$region <- "North Korea"
+
+sugar_data[sugar_data$Location =="Republic of Korea",]$region <- "South Korea"
+
+sugar_data[sugar_data$Location =="Iran (Islamic Republic of)" ,]$region <- "Iran"
+
+sugar_data[sugar_data$Location =="Lao People's Democratic Republic",]$region <- "Laos"
+
+sugar_data[sugar_data$Location =="Syrian Arab Republic",]$region <- "Syria"
+
 ```
 
 Remove previous `Value` column to avoid a duplicated column:  
@@ -152,15 +220,64 @@ polygon_sf <- left_join(polygon_sf, sugar_data[,c("region", "Value")],
 
 Re-draw the map:  
 
-```{r, fig.cap = "Now fewer countries have data missing."}
+```{r, fig.cap = "Now fewer countries have data missing.", out.extra = "", eval = FALSE}
 ggplot(polygon_sf) +
   geom_sf(aes(fill = Value)) 
 ```
 
 The `left_join()` function will not automatically replace the values in the `Value` column; thus that column has been dropped before re-joining the sugar data values.  
   
+**Excercise.** Note that there is WHO data for "Trinidad and Tobago", but that the map data has Trinidad and Tobago labelled as separate regions. 
 
 \pagebreak  
+  
+  
+  
+
+# Colour Scales  
+  
+  
+```{r, fig.cap = "Now fewer countries have data missing.", out.extra = ""}
+pal <- colorspace::diverge_hcl(n = 20)
+
+ggplot(polygon_sf) +
+  theme_minimal() +
+  geom_sf(aes(fill = Value)) +
+  coord_sf(label_graticule = "none") +
+  theme(panel.grid = element_blank()) +
+  scale_fill_gradientn(colours = pal)
+```
+
+\pagebreak  
+  
+  
+  
+Try out different colour scales:  
+  
+```{r, fig.cap = "Now fewer countries have data missing.", out.extra = ""}
+palA <- colorspace::heat_hcl(n = 20)
+palB <- colorspace::terrain_hcl(n = 20)
+palC <- colorspace::rainbow_hcl(n = 20)
+palD <- colorspace::sequential_hcl(n = 20)
+
+p <- ggplot(polygon_sf) + theme_minimal() +
+  geom_sf(aes(fill = Value)) +
+  coord_sf(label_graticule = "none") +
+  theme(panel.grid = element_blank(), legend.position = "none")  
+  
+pA <- p %+% scale_fill_gradientn(colours = palA)
+pB <- p %+% scale_fill_gradientn(colours = palB)
+pC <- p %+% scale_fill_gradientn(colours = palC)
+pD <- p %+% scale_fill_gradientn(colours = palD)
+
+
+
+grid.arrange(pA, pB, pC, pD, ncol = 2)
+```
+
+\pagebreak  
+  
+  
   
   
 # Add Text Labels to the Map  
@@ -179,12 +296,18 @@ label_sf <-
 label_sf$centroid <- st_centroid(label_sf$geometry, of_largest_polygon = TRUE)
 label_sf$point_on_surface <- st_point_on_surface(label_sf$geometry)
 
-ggplot(polygon_sf) +
-  geom_sf(aes(fill = Value)) +
+polygon_sf$region_label <- str_replace_all(polygon_sf$region, " ", "\n")
+label_sf$region_label <- str_replace_all(label_sf$region, " ", "\n")
+
+ggplot(polygon_sf) + geom_sf(aes(fill = Value)) +
   geom_sf_text(aes(label = Value, geometry = centroid), data = label_sf,
-               size = 2, na.rm = TRUE) +
-  theme(legend.position = "bottom")
+               size = 2, na.rm = TRUE) + theme(legend.position = "bottom")
 ```
+This plot has a problem with overplotting of the text labels; also, black text on a blue background is relatively difficult to read.  
+  
+  
+
+
 \pagebreak  
   
   
@@ -193,11 +316,77 @@ ggplot(polygon_sf) +
 
 pal <- colorspace::diverge_hcl(n = 20)
 
-ggplot(polygon_sf) +
+ggplot(polygon_sf) + theme_minimal() +
   geom_sf(aes(fill = Value)) +
-  geom_sf_text(aes(label = paste(region, Value), geometry = centroid), 
-               data = label_sf[!is.na(label_sf$Value), ], size = 2, na.rm = TRUE) +
-  xlim(-25, 45) + ylim(-35, 75) +
+  geom_sf_text(aes(label = paste(region, Value, sep = "\n"), geometry = centroid), 
+               data = label_sf[!is.na(label_sf$Value), ], size = 2, na.rm = TRUE,
+               lineheight = 1.05) +
+  xlim(-25, 55) + ylim(-35, 75) +
   theme(legend.position = "bottom") +
-  scale_fill_gradientn(colours = pal)
+  scale_fill_gradientn(colours = pal) 
 ```
+
+\pagebreak  
+  
+  
+  
+## Attempts to Improve the Plot  
+  
+  
+We can try to improve the placement of the text labels by using the `ggrepel` package; however, this will not necessarily give us flawless results.  
+  
+  
+
+```{r, fig.height = 6.5, fig.cap = "", out.extra = ""}
+ggplot(polygon_sf) + theme_minimal() +
+  geom_sf(aes(fill = Value)) +
+  geom_text_repel(stat = "sf_coordinates", aes(label = paste(region, Value, sep = "\n"), geometry = centroid), 
+               data = label_sf[!is.na(label_sf$Value), ], size = 2, na.rm = TRUE,
+               lineheight = 1.05, min.segment.length = 0.1, force = 1.5, max.time = 2) +
+  xlim(-25, 55) + ylim(-35, 70) + theme(legend.position = "right") +
+  scale_fill_gradientn(colours = pal) 
+```
+\pagebreak  
+  
+  
+```{r, fig.height = 6.5, fig.cap = "", out.extra = ""}
+ggplot(polygon_sf) + theme_minimal() +
+  geom_sf(aes(fill = Value)) +
+  geom_text_repel(stat = "sf_coordinates", aes(label = paste(region_label, Value, sep = "\n"), geometry = centroid), 
+               data = label_sf[!is.na(label_sf$Value), ], size = 1.8, na.rm = TRUE,
+               lineheight = 0.95, min.segment.length = 0.1, force = 0.1, force_pull = 10, max.time = 2,
+               box.padding = 0.05, max.overlaps = 20) +
+  xlim(-25, 55) + ylim(-35, 70) + theme(legend.position = "right") +
+  scale_fill_gradientn(colours = pal) 
+```
+\pagebreak  
+  
+  
+  
+```{r, fig.height = 6.5, fig.cap = "", out.extra = "", echo = FALSE, eval = FALSE}
+ggplot(polygon_sf) + theme_minimal() +
+  geom_sf(aes(colour = Value, fill = Value, size = Value, geometry = centroid), data = label_sf, shape = 21) +
+  geom_text_repel(stat = "sf_coordinates", aes(label = paste(region_label, Value, sep = "\n"), geometry = centroid), 
+               data = label_sf[!is.na(label_sf$Value), ], size = 1.8, na.rm = TRUE,
+               lineheight = 0.95, min.segment.length = 0.1, force = 20, force_pull = 1, max.time = 2,
+               box.padding = 0.05, max.overlaps = 20) +
+  xlim(-25, 55) + ylim(-35, 70) + theme(legend.position = "right") +
+  scale_fill_gradientn(colours = pal, aesthetics = c("fill", "colour")) 
+```
+
+\pagebreak  
+  
+  
+  
+```{r, echo = FALSE, eval = FALSE}
+ggplot(polygon_sf) + theme_minimal() +
+  geom_sf(aes(fill = Value)) +
+  geom_text_repel(stat = "sf_coordinates", aes(label = paste(region, Value, sep = "\n"), geometry = centroid), 
+               data = label_sf[!is.na(label_sf$Value), ], size = 2, na.rm = TRUE,
+               lineheight = 1.05) +
+  xlim(80, 140) + ylim(-30, 50) +
+  theme(legend.position = "bottom") +
+  scale_fill_gradientn(colours = pal) 
+```
+
+
